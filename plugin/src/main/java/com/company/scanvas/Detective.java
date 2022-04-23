@@ -1,6 +1,5 @@
 package com.company.scanvas;
 
-import com.codahale.metrics.Counter;
 import com.codahale.metrics.MetricRegistry;
 import com.company.scanvas.model.Alert;
 import org.opennms.integration.api.v1.events.EventForwarder;
@@ -22,9 +21,6 @@ public class Detective implements EventListener {
     private final EventSubscriptionService eventSubscriptionService;
     private final EventForwarder eventForwarder;
     private final ApiClient apiClient;
-    private final MetricRegistry metrics = new MetricRegistry();
-    private final Counter scansRequested = metrics.counter("scansRequested");
-    private final Counter scanRequestsFailed = metrics.counter("scanRequestsFailed");
 
 
     public Detective(EventSubscriptionService ess, EventForwarder ef, ApiClient ac) {
@@ -61,9 +57,6 @@ public class Detective implements EventListener {
     public void fini() {
         eventSubscriptionService.removeEventListener(this);
     }
-
-    public void incrementRequestCount() { scansRequested.inc(); }
-    public void incrementFailedCount() { scanRequestsFailed.inc(); }
 
 //    @Override
 //    public void handleNewOrUpdatedAlarm(Alarm alarm) {
@@ -132,6 +125,6 @@ public class Detective implements EventListener {
     }
 
     public MetricRegistry getMetrics() {
-        return metrics;
+        return apiClient.getMetrics();
     }
 }

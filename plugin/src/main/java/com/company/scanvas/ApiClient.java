@@ -1,7 +1,10 @@
 package com.company.scanvas;
 
-import com.company.scanvas.model.Alert;
-import com.company.scanvas.model.Credentials;
+import com.codahale.metrics.Counter;
+import com.codahale.metrics.MetricRegistry;
+import com.company.scanvas.model.CreateTarget;
+import com.company.scanvas.model.Initialize;
+import com.company.scanvas.model.InitializeResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import okhttp3.*;
@@ -12,13 +15,15 @@ import javax.net.ssl.*;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.security.KeyStore;
+import java.util.HashMap;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 public class ApiClient implements HostnameVerifier {
-
+    private final MetricRegistry metrics = new MetricRegistry();
+    private final Counter scansRequested = metrics.counter("scansRequested");
+    private final Counter scanRequestsFailed = metrics.counter("scanRequestsFailed");
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
-
     private final OkHttpClient client;
     private final ObjectMapper mapper = new ObjectMapper();
     private final String url;
@@ -26,10 +31,13 @@ public class ApiClient implements HostnameVerifier {
     private final String vasUsername;
     private final String vasPassword;
 
+    private HashMap<CompletableFuture<Void>, IState> stateMap;
+
     public ApiClient(String url, String keystore, String password, String vasuser, String vaspass) {
         this.url = Objects.requireNonNull(url);
         this.vasUsername = vasuser;
         this.vasPassword = vaspass;
+        stateMap = new HashMap<>();
 
         // we need to use the client certificate to auth ourselves with openVAS
         try {
@@ -58,22 +66,16 @@ public class ApiClient implements HostnameVerifier {
         }
     }
 
-    public CompletableFuture<Void> sendAlert(Alert alert) {
-        return doPost(url, alert);
-    }
-
     public CompletableFuture<Void> testPost() {
-        String initurl = url + "initialize";
-        Credentials creds = new Credentials(vasUsername, vasPassword);
-        System.out.println("YAY, testing "+initurl+" with body "+creds);
-        return doPost(initurl, new Credentials());
+        Initialize init = new Initialize(vasUsername, vasPassword);
+        scansRequested.inc();
+        return doPost(url + init.endpoint(), init);
     }
 
-    private CompletableFuture<Void> doPost(String url, Object requestBodyPayload) {
+    private CompletableFuture<Void> doPost(String url, IState requestBodyPayload) {
         RequestBody body;
         try {
             body = RequestBody.create(JSON, mapper.writeValueAsString(requestBodyPayload));
-            LOG.error("request body="+mapper.writeValueAsString(requestBodyPayload));
         } catch (JsonProcessingException e) {
             throw new RuntimeException(e);
         }
@@ -86,34 +88,40 @@ public class ApiClient implements HostnameVerifier {
                 .build();
 
         CompletableFuture<Void> future = new CompletableFuture<>();
+        stateMap.put(future, requestBodyPayload);
         client.newCall(request)
                 .enqueue(new Callback() {
                     @Override
                     public void onFailure(Call call, IOException e) {
                         LOG.error("request failed: "+e);
+                        scanRequestsFailed.inc();
+                        stateMap.remove(future);
                         future.completeExceptionally(e);
                     }
 
                     @Override
                     public void onResponse(Call call, Response response) {
                         try {
+                            String bodyPayload = "";
+                            ResponseBody body = response.body();
+                            if (body != null) {
+                                try {
+                                    bodyPayload = body.string();
+                                } catch (IOException e) {
+                                    // pass
+                                }
+                                body.close();
+                            }
+
                             if (!response.isSuccessful()) {
                                 LOG.error("request got response but was not successful");
-                                String bodyPayload = "(empty)";
-                                ResponseBody body = response.body();
-                                if (body != null) {
-                                    try {
-                                        bodyPayload = body.string();
-                                    } catch (IOException e) {
-                                        // pass
-                                    }
-                                    body.close();
-                                }
-
+                                scanRequestsFailed.inc();
+                                stateMap.remove(future);
                                 future.completeExceptionally(new Exception("Request failed with response code: "
                                         + response.code() + " and body: " + bodyPayload));
                             } else {
-                                LOG.error("request completed");
+                                handleGatewayResponse(future, bodyPayload);
+                                stateMap.remove(future);
                                 future.complete(null);
                             }
                         } finally {
@@ -124,10 +132,45 @@ public class ApiClient implements HostnameVerifier {
         return future;
     }
 
+    private void handleGatewayResponse(CompletableFuture<Void> future, String bodyPayload) {
+        LOG.info("Request complete: "+bodyPayload);
+        IState state = stateMap.get(future);
+
+        if(state == null) {
+            LOG.error("no future for you!");
+            return;
+        }
+
+        Object o = state.parseResponse(bodyPayload);
+        if(o == null) {
+            LOG.error("failed to parse response");
+            return;
+        }
+        switch(state.nextState()) {
+            case STATE_CREATE_TARGET:
+                LOG.info("moving to CreateTarget");
+                CreateTarget target = new CreateTarget(
+                        state.credentials(),
+                        ((InitializeResponse)o).getConfigId(),
+                        ((InitializeResponse)o).getScannerId(),
+                        "5.6.7.8");
+                doPost(url + target.endpoint(), target);
+                break;
+            case STATE_CREATE_TASK:
+                LOG.info("moving to CreateTask");
+//                CreateTask task = new CreateTask();
+//                doPost(url + task.endpoint(), task);
+                break;
+        }
+    }
+
     @Override
     public boolean verify(String hostname, SSLSession session) {
         // we don't care if the hostname matches the cert because we only
         // connect to a server with our specific certificate installed
         return true;
+    }
+    public MetricRegistry getMetrics() {
+        return metrics;
     }
 }

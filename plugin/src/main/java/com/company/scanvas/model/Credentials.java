@@ -8,10 +8,15 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class Credentials {
     @JsonProperty("username")
-    private String username = "admin";
+    private final String username;
 
     @JsonProperty("password")
-    private String password = "";
+    private final String password;
+
+    public Credentials(String user, String pass) {
+        this.username = user;
+        this.password = pass;
+    }
 
     @Override
     public String toString() {

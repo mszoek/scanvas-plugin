@@ -1,0 +1,53 @@
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:cm="http://aries.apache.org/blueprint/xmlns/blueprint-cm/v1.1.0"
+           xsi:schemaLocation="http://www.osgi.org/xmlns/blueprint/v1.0.0
+                http://www.osgi.org/xmlns/blueprint/v1.0.0/blueprint.xsd
+                http://aries.apache.org/blueprint/xmlns/blueprint-cm/v1.1.0
+                http://aries.apache.org/schemas/blueprint-cm/blueprint-cm-1.1.0.xsd">
+
+    <!-- Configuration stored in $OPENNMS_HOME/etc/com.company.scanvas.cfg file -->
+    <cm:property-placeholder id="scanvasPluginProperties" persistent-id="com.company.scanvas" update-strategy="reload">
+        <cm:default-properties>
+            <cm:property name="url" value="https://scanvas.eastus2.cloudapp.azure.com:8443/" />
+            <cm:property name="keystore" value="scanvas.jks" />
+            <cm:property name="password" value="" />
+        </cm:default-properties>
+    </cm:property-placeholder>
+
+    <!-- Pull in service implementations from the OSGi registry -->
+    <reference id="eventForwarder" interface="org.opennms.integration.api.v1.events.EventForwarder" availability="optional"/>
+    <reference id="eventSubscriptionService" interface="org.opennms.integration.api.v1.events.EventSubscriptionService" availability="optional" />
+
+    <!-- Build our API client -->
+    <bean id="apiClient" class="com.company.scanvas.ApiClient">
+        <argument value="${url}"/>
+        <argument value="${keystore}"/>
+        <argument value="${password}"/>
+        <argument value="${vasUsername}"/>
+        <argument value="${vasPassword}"/>
+    </bean>
+
+    <bean id="detective" class="com.company.scanvas.Detective" init-method="init" destroy-method="fini">
+        <argument ref="eventSubscriptionService"/>
+        <argument ref="apiClient"/>
+        <argument ref="eventForwarder"/>
+    </bean>
+
+    <!-- Expose the Detective for access from our shell commands -->
+    <service interface="com.company.scanvas.Detective" ref="detective"/>
+
+    <!-- Build and expose the JAX-RS annotated webhook handler.
+         This will automatically mount the endpoint over the REST API. -->
+    <bean id="webhookHandlerImpl" class="com.company.scanvas.WebhookHandlerImpl" />
+    <service interface="com.company.scanvas.WebhookHandler" ref="webhookHandlerImpl">
+        <service-properties>
+            <entry key="application-path" value="/rest" />
+        </service-properties>
+    </service>
+
+    <!-- Expose our custom event definitions bundled in the .jar -->
+    <service interface="org.opennms.integration.api.v1.config.events.EventConfExtension">
+        <bean class="com.company.scanvas.EventConfExtension"/>
+    </service>
+
+</blueprint>

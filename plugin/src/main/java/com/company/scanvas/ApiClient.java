@@ -2,12 +2,13 @@ package com.company.scanvas;
 
 import com.codahale.metrics.Counter;
 import com.codahale.metrics.MetricRegistry;
-import com.company.scanvas.model.CreateTarget;
-import com.company.scanvas.model.Initialize;
-import com.company.scanvas.model.InitializeResponse;
+import com.company.scanvas.model.*;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import okhttp3.*;
+import org.opennms.integration.api.v1.events.EventForwarder;
+import org.opennms.integration.api.v1.model.immutables.ImmutableEventParameter;
+import org.opennms.integration.api.v1.model.immutables.ImmutableInMemoryEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,6 +21,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 public class ApiClient implements HostnameVerifier {
+    private final String SCAN_REQUESTED_UEI = "uei.opennms.org/scanvasPlugin/securityScanRequested";
     private final MetricRegistry metrics = new MetricRegistry();
     private final Counter scansRequested = metrics.counter("scansRequested");
     private final Counter scanRequestsFailed = metrics.counter("scanRequestsFailed");
@@ -30,13 +32,15 @@ public class ApiClient implements HostnameVerifier {
     private static final Logger LOG = LoggerFactory.getLogger(ApiClient.class);
     private final String vasUsername;
     private final String vasPassword;
+    private final EventForwarder eventForwarder;
 
     private HashMap<CompletableFuture<Void>, IState> stateMap;
 
-    public ApiClient(String url, String keystore, String password, String vasuser, String vaspass) {
+    public ApiClient(String url, String keystore, String password, String vasuser, String vaspass, EventForwarder ef) {
         this.url = Objects.requireNonNull(url);
         this.vasUsername = vasuser;
         this.vasPassword = vaspass;
+        this.eventForwarder = ef;
         stateMap = new HashMap<>();
 
         // we need to use the client certificate to auth ourselves with openVAS
@@ -66,8 +70,8 @@ public class ApiClient implements HostnameVerifier {
         }
     }
 
-    public CompletableFuture<Void> testPost() {
-        Initialize init = new Initialize(vasUsername, vasPassword);
+    public CompletableFuture<Void> scheduleScan(int node, String host) {
+        Initialize init = new Initialize(node, vasUsername, vasPassword, host);
         scansRequested.inc();
         return doPost(url + init.endpoint(), init);
     }
@@ -150,18 +154,53 @@ public class ApiClient implements HostnameVerifier {
             case STATE_CREATE_TARGET:
                 LOG.info("moving to CreateTarget");
                 CreateTarget target = new CreateTarget(
+                        state.getNodeId(),
                         state.credentials(),
-                        ((InitializeResponse)o).getConfigId(),
                         ((InitializeResponse)o).getScannerId(),
-                        "5.6.7.8");
+                        ((InitializeResponse)o).getConfigId(),
+                        ((Initialize)state).getHost());
                 doPost(url + target.endpoint(), target);
                 break;
             case STATE_CREATE_TASK:
                 LOG.info("moving to CreateTask");
-//                CreateTask task = new CreateTask();
-//                doPost(url + task.endpoint(), task);
+                CreateTask task = new CreateTask(
+                        state.getNodeId(),
+                        state.credentials(),
+                        ((CreateTarget)state).getScannerId(),
+                        ((CreateTarget)state).getConfigId(),
+                        ((CreateTarget)state).getHost(),
+                        ((CreateTargetResponse)o).getTargetId());
+                doPost(url + task.endpoint(), task);
+                break;
+            case STATE_START_TASK:
+                LOG.info("moving to StartTask");
+                StartTask stask = new StartTask(
+                        state.getNodeId(),
+                        state.credentials(),
+                        ((CreateTaskResponse)o).getTaskId());
+                doPost(url + stask.endpoint(), stask);
+                break;
+            case STATE_GET_REPORT:
+                LOG.info("waiting for scan report ID "+
+                        ((StartTaskResponse)o).getReportId());
+                // since we have no way to set an Alert on the new GVM Task,
+                // we can't tell it to invoke us when the task finishes. We'll
+                // just send an event with the report URL for now.
+                sendScanRequestedEvent(state.getNodeId(), ((StartTaskResponse)o).getReportId());
                 break;
         }
+    }
+
+    public void sendScanRequestedEvent(int node, String reportId) {
+        eventForwarder.sendAsync(ImmutableInMemoryEvent.newBuilder()
+            .setUei(SCAN_REQUESTED_UEI)
+            .setSource("ScanVAS")
+            .setNodeId(node)
+            .addParameter(ImmutableEventParameter.newBuilder()
+                .setName("reporturl")
+                .setValue(url.replaceAll(":\\d+/","/report/") + reportId)
+                .build())
+            .build());
     }
 
     @Override

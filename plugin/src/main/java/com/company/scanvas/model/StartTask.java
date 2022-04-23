@@ -8,48 +8,54 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import static com.company.scanvas.State.STATE_CREATE_TARGET;
+import static com.company.scanvas.State.STATE_GET_REPORT;
 
 @JsonAutoDetect(fieldVisibility=JsonAutoDetect.Visibility.NONE)
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class Initialize implements IState {
-    @JsonProperty("username")
-    private final String username;
+public class StartTask implements IState {
+    @JsonProperty("user")
+    private Credentials user;
 
-    @JsonProperty("password")
-    private final String password;
-    @JsonIgnore
-    private final int node;
-    @JsonIgnore
-    private final String host;
+    public class Params {
+        @JsonProperty("task_id")
+        private String taskId;
 
-    public Initialize(int node, String user, String pass, String host) {
-        this.node = node;
-        this.username = user;
-        this.password = pass;
-        this.host = host;
+        public Params(String task) {
+            this.taskId = task;
+        }
     }
 
-    public State nextState() { return STATE_CREATE_TARGET; }
+    @JsonProperty("params")
+    private Params params;
+    @JsonIgnore
+    private final int node;
 
-    public String endpoint() { return "initialize"; }
+    public StartTask(int node, Credentials cred, String task) {
+        this.params = new Params(task);
+        this.user = cred;
+        this.node = node;
+    }
+
+    public State nextState() { return STATE_GET_REPORT; }
+
+    public String endpoint() { return "starttask"; }
 
     @Override
     public Object parseResponse(String body) {
         ObjectMapper mapper = new ObjectMapper();
-        InitializeResponse ir;
+        StartTaskResponse str;
         try {
-            ir = mapper.readValue(body, InitializeResponse.class);
+            str = mapper.readValue(body, StartTaskResponse.class);
         } catch(Exception e) {
             return null;
         }
-        return ir;
+        return str;
     }
 
     @Override
     public Credentials credentials() {
-        return new Credentials(username, password);
+        return user;
     }
-    public String getHost() { return this.host; }
     public int getNodeId() { return this.node; }
+
 }

@@ -25,12 +25,12 @@
         <argument value="${password}"/>
         <argument value="${vasUsername}"/>
         <argument value="${vasPassword}"/>
+        <argument ref="eventForwarder"/>
     </bean>
 
     <bean id="detective" class="com.company.scanvas.Detective" init-method="init" destroy-method="fini">
         <argument ref="eventSubscriptionService"/>
         <argument ref="apiClient"/>
-        <argument ref="eventForwarder"/>
     </bean>
 
     <!-- Expose the Detective for access from our shell commands -->

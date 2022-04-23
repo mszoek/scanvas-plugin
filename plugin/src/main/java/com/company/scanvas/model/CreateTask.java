@@ -8,58 +8,53 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import static com.company.scanvas.State.*;
+import static com.company.scanvas.State.STATE_START_TASK;
 
 @JsonAutoDetect(fieldVisibility=JsonAutoDetect.Visibility.NONE)
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class CreateTarget implements IState {
+public class CreateTask implements IState {
     @JsonProperty("user")
     private Credentials user;
 
     public class Params {
+        @JsonProperty("config_id")
+        private String configId;
+        @JsonProperty("target_id")
+        private String targetId;
         @JsonProperty("name")
         private String name;
+        @JsonProperty("scanner_id")
+        private String scannerId;
 
-        @JsonProperty("hosts")
-        private String hosts;
-
-        public Params(String n, String h) {
+        public Params(String n, String config, String scanner, String target) {
             this.name = n;
-            this.hosts = h;
+            this.configId = config;
+            this.scannerId = scanner;
+            this.targetId = target;
         }
     }
 
     @JsonProperty("params")
     private Params params;
-
-    @JsonIgnore
-    private String scannerId;
-    @JsonIgnore
-    private String configId;
-    @JsonIgnore
-    private String host;
     @JsonIgnore
     private final int node;
 
-    public CreateTarget(int node, Credentials cred, String scanner, String config, String host) {
-        this.node = node;
-        this.params = new Params(host, host);
+    public CreateTask(int node, Credentials cred, String scanner, String config, String host, String target) {
+        this.params = new Params("scan_"+host, config, scanner, target);
         this.user = cred;
-        this.scannerId = scanner;
-        this.configId = config;
-        this.host = host;
+        this.node = node;
     }
 
-    public State nextState() { return STATE_CREATE_TASK; }
+    public State nextState() { return STATE_START_TASK; }
 
-    public String endpoint() { return "createtarget"; }
+    public String endpoint() { return "createtask"; }
 
     @Override
     public Object parseResponse(String body) {
         ObjectMapper mapper = new ObjectMapper();
-        CreateTargetResponse ctr;
+        CreateTaskResponse ctr;
         try {
-            ctr = mapper.readValue(body, CreateTargetResponse.class);
+            ctr = mapper.readValue(body, CreateTaskResponse.class);
         } catch(Exception e) {
             return null;
         }
@@ -70,9 +65,6 @@ public class CreateTarget implements IState {
     public Credentials credentials() {
         return user;
     }
-
-    public String getConfigId() { return configId; }
-    public String getScannerId() { return scannerId; }
-    public String getHost() { return host; }
     public int getNodeId() { return this.node; }
+
 }

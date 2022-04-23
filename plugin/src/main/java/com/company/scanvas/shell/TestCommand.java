@@ -6,7 +6,7 @@ import org.apache.karaf.shell.api.action.Command;
 import org.apache.karaf.shell.api.action.lifecycle.Reference;
 import org.apache.karaf.shell.api.action.lifecycle.Service;
 
-@Command(scope = "opennms-scanvas", name = "testvas", description = "Ping OpenVAS gateway.")
+@Command(scope = "opennms-scanvas", name = "testvas", description = "Schedule a scan of localhost")
 @Service
 public class TestCommand implements Action {
 

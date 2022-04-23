@@ -2,15 +2,15 @@
     <event>
         <uei>uei.opennms.org/scanvasPlugin/securityScanRequested</uei>
         <event-label>ScanVAS Plugin: Security scan requested</event-label>
-        <descr>A vulnerability scan was requested for %interface%</descr>
-        <logmsg dest="logndisplay">ScanVAS Plugin: A vulnerability scan was requested for node %interface%</logmsg>
+        <descr>A vulnerability scan has been initiated. Scan progress and results can be found at &lt;a href="%parm[reporturl]%"&gt;%parm[reporturl]%&lt;/a&gt;</descr>
+        <logmsg dest="logndisplay">ScanVAS Plugin: A vulnerability scan was requested for node %nodeid%</logmsg>
         <severity>Normal</severity>
     </event>
     <event>
         <uei>uei.opennms.org/scanvasPlugin/securityScanComplete</uei>
         <event-label>ScanVAS Plugin: Security scan complete</event-label>
-        <descr>A requested vulnerability scan has completed for node %interface%. Message is: %parm[message]%</descr>
-        <logmsg dest="logndisplay">ScanVAS Plugin: A requested vulnerability scan has completed for %interface%</logmsg>
+        <descr>A requested vulnerability scan has completed for node %nodeid%. Message is: %parm[message]%</descr>
+        <logmsg dest="logndisplay">ScanVAS Plugin: A requested vulnerability scan has completed for %nodeid%</logmsg>
         <severity>Normal</severity>
     </event>
 </events>

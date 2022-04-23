@@ -1,11 +1,8 @@
 package com.company.scanvas;
 
 import com.codahale.metrics.MetricRegistry;
-import com.company.scanvas.model.Alert;
-import org.opennms.integration.api.v1.events.EventForwarder;
 import org.opennms.integration.api.v1.events.EventListener;
 import org.opennms.integration.api.v1.events.EventSubscriptionService;
-import org.opennms.integration.api.v1.model.Alarm;
 import org.opennms.integration.api.v1.model.InMemoryEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,19 +10,18 @@ import org.slf4j.LoggerFactory;
 import java.util.Objects;
 import java.util.Vector;
 
+// the Detective investigates newSuspects :)
 public class Detective implements EventListener {
     private static final String NEW_SUSPECT_UEI = "uei.opennms.org/internal/discovery/newSuspect";
     private static final String NODE_GAINED_INTERFACE_UEI = "uei.opennms.org/nodes/nodeGainedInterface";
     private static final Logger LOG = LoggerFactory.getLogger(Detective.class);
     private final Vector<String> interestingUEIs = new Vector<>();
     private final EventSubscriptionService eventSubscriptionService;
-    private final EventForwarder eventForwarder;
     private final ApiClient apiClient;
 
 
-    public Detective(EventSubscriptionService ess, EventForwarder ef, ApiClient ac) {
+    public Detective(EventSubscriptionService ess, ApiClient ac) {
         this.eventSubscriptionService = Objects.requireNonNull(ess);
-        this.eventForwarder = Objects.requireNonNull(ef);
         this.apiClient = Objects.requireNonNull(ac);
 
         interestingUEIs.add(NEW_SUSPECT_UEI);
@@ -44,11 +40,15 @@ public class Detective implements EventListener {
 
     @Override
     public void onEvent(InMemoryEvent e) {
-        LOG.error("Received event "+e);
+        LOG.debug("Received event "+e);
+        if(e.getUei().equals(NODE_GAINED_INTERFACE_UEI))
+            apiClient.scheduleScan(e.getNodeId(), e.getParameterValue("iphostname").orElseThrow());
+        else if(e.getUei().equals(NEW_SUSPECT_UEI))
+            LOG.error(NEW_SUSPECT_UEI+" is not handled yet");
     }
 
     public void testPost() {
-        apiClient.testPost();
+        apiClient.scheduleScan(1,"127.0.0.1");
     }
     public void init() {
         eventSubscriptionService.addEventListener(this, interestingUEIs);
@@ -56,72 +56,6 @@ public class Detective implements EventListener {
 
     public void fini() {
         eventSubscriptionService.removeEventListener(this);
-    }
-
-//    @Override
-//    public void handleNewOrUpdatedAlarm(Alarm alarm) {
-//        if (alarm.getReductionKey().startsWith(UEI_PREFIX)) {
-//            // Never forward alarms that the plugin itself creates
-//            return;
-//        }
-//
-//        // Map the alarm to the corresponding model object that the API requires
-//        Alert alert = toAlert(alarm);
-//
-//        // Forward the alarm
-//        apiClient.sendAlert(alert).whenComplete((v,ex) -> {
-//            if (ex != null) {
-//                eventsForwarded.mark();
-//                eventForwarder.sendAsync(ImmutableInMemoryEvent.newBuilder()
-//                        .setUei(SEND_EVENT_FAILED_UEI)
-//                        .addParameter(ImmutableEventParameter.newBuilder()
-//                                .setName("reductionKey")
-//                                .setValue(alarm.getReductionKey())
-//                                .build())
-//                        .addParameter(ImmutableEventParameter.newBuilder()
-//                                .setName("message")
-//                                .setValue(ex.getMessage())
-//                                .build())
-//                        .build());
-//                LOG.warn("Sending event for alarm with reduction-key: {} failed.", alarm.getReductionKey(), ex);
-//            } else {
-//                eventsFailed.mark();
-//                eventForwarder.sendAsync(ImmutableInMemoryEvent.newBuilder()
-//                        .setUei(SEND_EVENT_SUCCESSFUL_UEI)
-//                        .addParameter(ImmutableEventParameter.newBuilder()
-//                                .setName("reductionKey")
-//                                .setValue(alarm.getReductionKey())
-//                                .build())
-//                        .build());
-//                LOG.info("Event sent successfully for alarm with reduction-key: {}", alarm.getReductionKey());
-//            }
-//        });
-//    }
-
-    public static Alert toAlert(Alarm alarm) {
-        Alert alert = new Alert();
-        alert.setStatus(toStatus(alarm));
-        alert.setDescription(alarm.getDescription());
-        return alert;
-    }
-
-    private static Alert.Status toStatus(Alarm alarm) {
-        if (alarm.isAcknowledged()) {
-            return Alert.Status.ACKNOWLEDGED;
-        }
-        switch (alarm.getSeverity()) {
-            case INDETERMINATE:
-            case CLEARED:
-            case NORMAL:
-                return Alert.Status.OK;
-            case WARNING:
-            case MINOR:
-                return Alert.Status.WARNING;
-            case MAJOR:
-            case CRITICAL:
-            default:
-                return Alert.Status.CRITICAL;
-        }
     }
 
     public MetricRegistry getMetrics() {

@@ -8,4 +8,5 @@ public interface IState {
     public String endpoint();
     public Object parseResponse(String body);
     public Credentials credentials();
+    public int getNodeId();
 }
